@@ -1,0 +1,11 @@
+services:
+  rentor-agents:
+    build: .
+    ports:
+      - "${PORT:-8080}:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./knowledge_base:/app/knowledge_base:ro
+      - ./agent_sessions:/app/agent_sessions
+    restart: unless-stopped
