@@ -20,6 +20,7 @@ async def google_chat_webhook(request: Request):
     """
     event = await request.json()
     event_type = event.get("type", "")
+    print(f"[WEBHOOK] type={event_type} user={event.get('user', {}).get('displayName', '?')}")
 
     if event_type == "ADDED_TO_SPACE":
         space_type = event.get("space", {}).get("type", "")
@@ -88,6 +89,7 @@ async def _handle_message_event(event: dict) -> dict:
     response = await handle_message_fast(incoming)
 
     result: dict = {"text": response.text}
+    print(f"[WEBHOOK] responding with {len(response.text)} chars")
 
     # Thread the response if in a space
     thread_name = message_data.get("thread", {}).get("name")
