@@ -31,6 +31,25 @@ app = FastAPI(
 app.include_router(chat_router)
 
 
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "service": "Rentor AI Agents",
+        "version": "0.1.0",
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "docs": "/docs",
+            "register_user": "POST /api/users",
+            "send_message": "POST /api/message",
+            "google_chat_webhook": "POST /chat/webhook",
+            "video_join": "POST /api/video/join",
+            "video_leave": "POST /api/video/leave/{user_id}",
+        },
+    }
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint."""
