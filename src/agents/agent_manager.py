@@ -5,9 +5,8 @@ Supports Memory Stores for knowledge base and Multi-Agent orchestration.
 
 import anthropic
 from src.agents.managed_agent import create_session, send_message
-from src.config import ANTHROPIC_API_KEY, DEFAULT_MODEL
+from src.config import ANTHROPIC_API_KEY
 from src.agents.system_prompts import build_full_prompt
-from src.knowledge.policy_loader import load_all_policies
 from src.models.schemas import AgentUser, IncomingMessage, AgentResponse
 
 # In-memory registry of user agents and their sessions
@@ -121,25 +120,18 @@ async def handle_message(message: IncomingMessage) -> AgentResponse:
 _cached_system_prompt: str = ""
 
 
-_cached_system_prompt: str = ""
-
-
 def _get_system_prompt(user: AgentUser) -> str:
-    """Get system prompt with knowledge base, kept short for fast responses."""
-    global _cached_system_prompt
-    if not _cached_system_prompt:
-        policy_text = load_all_policies()
-        # Keep prompt under 30K chars for fast Google Chat responses
-        max_chars = 25_000
-        if len(policy_text) > max_chars:
-            policy_text = policy_text[:max_chars] + "\n\n[... See full rulebook for remaining rules ...]"
-        _cached_system_prompt = build_full_prompt(
-            user_name=user.display_name,
-            user_role=user.role,
-            user_department=user.department,
-            policy_text=policy_text,
-        )
-    return _cached_system_prompt
+    """Get a lightweight system prompt without the full knowledge base.
+
+    The full Rentor Rules will be available via Memory Stores once
+    research preview access is granted. For now, keep it fast.
+    """
+    return build_full_prompt(
+        user_name=user.display_name,
+        user_role=user.role,
+        user_department=user.department,
+        policy_text="",  # No inline policies — use Memory Stores when available
+    )
 
 
 async def handle_message_fast(message: IncomingMessage) -> AgentResponse:
