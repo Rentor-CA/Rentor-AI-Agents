@@ -1,4 +1,7 @@
-"""Manages per-user Claude agents with persistent sessions via Managed Agents API."""
+"""Manages per-user Claude agents with persistent sessions via Managed Agents API.
+
+Supports Memory Stores for knowledge base and Multi-Agent orchestration.
+"""
 
 from src.agents.managed_agent import create_session, send_message
 from src.models.schemas import AgentUser, IncomingMessage, AgentResponse
@@ -10,13 +13,19 @@ _user_sessions: dict[str, str] = {}  # user_id -> session_id
 # Set by main.py on startup
 _agent_id: str = ""
 _environment_id: str = ""
+_memory_store_ids: list[str] = []
 
 
-def configure(agent_id: str, environment_id: str) -> None:
+def configure(
+    agent_id: str,
+    environment_id: str,
+    memory_store_ids: list[str] | None = None,
+) -> None:
     """Configure the global managed agent IDs. Called once at startup."""
-    global _agent_id, _environment_id
+    global _agent_id, _environment_id, _memory_store_ids
     _agent_id = agent_id
     _environment_id = environment_id
+    _memory_store_ids = memory_store_ids or []
 
 
 def register_user(user: AgentUser) -> None:
@@ -48,9 +57,14 @@ def _get_or_create_session(user_id: str) -> str:
     if user_id in _user_sessions:
         return _user_sessions[user_id]
 
+    user = get_user(user_id)
+    title = f"{user.display_name}'s session" if user else f"Session for {user_id}"
+
     session = create_session(
         agent_id=_agent_id,
         environment_id=_environment_id,
+        memory_store_ids=_memory_store_ids if _memory_store_ids else None,
+        title=title,
     )
     session_id = session.id
     _user_sessions[user_id] = session_id
