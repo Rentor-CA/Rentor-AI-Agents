@@ -63,11 +63,16 @@ async def google_chat_webhook(request: Request):
     """Handle incoming Google Chat events."""
     raw = await request.json()
     print(f"[WEBHOOK] raw_keys={list(raw.keys())}")
+    # Log chat sub-object for debugging
+    chat_obj = raw.get("chat", {})
+    print(f"[WEBHOOK] chat_keys={list(chat_obj.keys()) if isinstance(chat_obj, dict) else type(chat_obj)}")
+    print(f"[WEBHOOK] chat={str(chat_obj)[:500]}")
 
     # Normalize to legacy format
     event = _normalize_event(raw)
     event_type = event.get("type", "")
     print(f"[WEBHOOK] normalized type={event_type}")
+    print(f"[WEBHOOK] extracted_text='{_extract_text(raw)[:100]}'")
 
     if event_type == "ADDED_TO_SPACE":
         space_type = event.get("space", {}).get("type", "")
