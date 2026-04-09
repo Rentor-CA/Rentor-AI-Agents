@@ -1,29 +1,80 @@
-"""FastAPI application entry point for Rentor AI Agents."""
+"""FastAPI application entry point for Rentor AI Agents (Managed Agents)."""
 
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from src.config import PORT
+from src.config import (
+    PORT, MANAGED_AGENT_ID, MANAGED_ENVIRONMENT_ID, MANAGED_MEMORY_STORE_ID,
+)
 from src.chat.google_chat import router as chat_router
-from src.agents.agent_manager import register_user, handle_message
+from src.agents.agent_manager import register_user, handle_message, configure
+from src.agents.managed_agent import setup_rentor_agent, get_agent
+from src.agents.system_prompts import build_base_prompt
 from src.models.schemas import AgentUser, IncomingMessage, MessageSource, VideoCallRequest
 from src.video.pika_manager import join_meeting, leave_meeting
-from src.knowledge.policy_loader import list_policies
+
+
+def _init_managed_agent() -> tuple[str, str]:
+    """Initialize or reuse the managed agent and environment."""
+    agent_id = MANAGED_AGENT_ID
+    env_id = MANAGED_ENVIRONMENT_ID
+
+    # If IDs are set, try to reuse them
+    if agent_id and env_id:
+        try:
+            get_agent(agent_id)
+            print(f"Reusing existing managed agent: {agent_id}")
+            return agent_id, env_id
+        except Exception:
+            print("Stored agent IDs invalid, creating new ones...")
+
+    # Create new agent and environment with knowledge base
+    print("Setting up new managed agent...")
+    from src.knowledge.policy_loader import load_all_policies
+    from src.agents.system_prompts import build_full_prompt
+    policy_text = load_all_policies()
+    # Managed Agents has a 100K char limit on system prompt.
+    # Truncate policy text if needed, keeping the most important rules.
+    max_policy_chars = 80_000
+    if len(policy_text) > max_policy_chars:
+        policy_text = policy_text[:max_policy_chars] + "\n\n[... Additional rules truncated for length ...]"
+    system_prompt = build_full_prompt(
+        user_name="{user}",
+        user_role="Team Member",
+        user_department="Operations",
+        policy_text=policy_text,
+    )
+    agent_id, env_id = setup_rentor_agent(system_prompt)
+
+    print(f"Managed Agent created!")
+    print(f"  MANAGED_AGENT_ID={agent_id}")
+    print(f"  MANAGED_ENVIRONMENT_ID={env_id}")
+    print("Add these to your .env to reuse on restart.")
+
+    return agent_id, env_id
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown."""
-    print("Rentor AI Agents starting up...")
-    print(f"Available policies: {list_policies()}")
+    print("Rentor AI Agents (Managed) starting up...")
+
+    try:
+        agent_id, env_id = _init_managed_agent()
+        configure(agent_id, env_id)
+        print("Managed agent configured and ready.")
+    except Exception as e:
+        print(f"WARNING: Could not initialize managed agent: {e}")
+        print("The server will start but agent messages will fail.")
+
     yield
     print("Rentor AI Agents shutting down.")
 
 
 app = FastAPI(
     title="Rentor AI Agents",
-    description="Personal AI agents for Rentor property management team",
-    version="0.1.0",
+    description="Personal AI agents for Rentor property management team (powered by Claude Managed Agents)",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -36,7 +87,8 @@ async def root():
     """Root endpoint."""
     return {
         "service": "Rentor AI Agents",
-        "version": "0.1.0",
+        "version": "0.2.0",
+        "platform": "Claude Managed Agents",
         "status": "running",
         "endpoints": {
             "health": "/health",
@@ -53,7 +105,7 @@ async def root():
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "service": "rentor-ai-agents"}
+    return {"status": "ok", "service": "rentor-ai-agents", "platform": "managed-agents"}
 
 
 @app.post("/api/users")
@@ -64,7 +116,7 @@ async def create_user(user: AgentUser):
 
 
 @app.post("/api/message")
-async def send_message(message: IncomingMessage):
+async def send_message_endpoint(message: IncomingMessage):
     """Send a message to an agent via the API (for testing or non-Chat clients)."""
     from src.agents.router import route_message
     message = route_message(message)

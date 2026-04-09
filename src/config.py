@@ -30,5 +30,9 @@ PORT = int(os.getenv("PORT", "8080"))
 
 # Agent defaults
 DEFAULT_MODEL = "claude-sonnet-4-6"
-MAX_AGENT_TURNS = 25
 COMPANY_NAME = "Rentor"
+
+# Managed Agent IDs (set after first setup, reused on restart)
+MANAGED_AGENT_ID = os.getenv("MANAGED_AGENT_ID", "")
+MANAGED_ENVIRONMENT_ID = os.getenv("MANAGED_ENVIRONMENT_ID", "")
+MANAGED_MEMORY_STORE_ID = os.getenv("MANAGED_MEMORY_STORE_ID", "")
