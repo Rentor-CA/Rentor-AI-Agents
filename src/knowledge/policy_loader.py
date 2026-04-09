@@ -4,13 +4,34 @@ from pathlib import Path
 from src.config import KNOWLEDGE_BASE_DIR
 
 # Supported file extensions
-SUPPORTED_EXTENSIONS = {".md", ".txt", ".rst"}
+TEXT_EXTENSIONS = {".md", ".txt", ".rst"}
+PDF_EXTENSIONS = {".pdf"}
+SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | PDF_EXTENSIONS
 
 
 def load_file(path: Path) -> str:
     """Read a single policy file and return its contents."""
     try:
+        if path.suffix.lower() in PDF_EXTENSIONS:
+            return _load_pdf(path)
         return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def _load_pdf(path: Path) -> str:
+    """Extract text from a PDF file."""
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(str(path))
+        pages = []
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                pages.append(text)
+        return "\n\n".join(pages)
+    except ImportError:
+        return f"[PDF file: {path.name} - install pypdf to read]"
     except Exception:
         return ""
 

@@ -4,10 +4,10 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
-
 # Base paths
 PROJECT_ROOT = Path(__file__).parent.parent
+
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 KNOWLEDGE_BASE_DIR = PROJECT_ROOT / "knowledge_base"
 SKILLS_DIR = PROJECT_ROOT / "skills"
 AGENT_SESSIONS_DIR = PROJECT_ROOT / "agent_sessions"
