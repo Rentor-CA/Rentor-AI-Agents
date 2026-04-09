@@ -121,14 +121,18 @@ async def handle_message(message: IncomingMessage) -> AgentResponse:
 _cached_system_prompt: str = ""
 
 
+_cached_system_prompt: str = ""
+
+
 def _get_system_prompt(user: AgentUser) -> str:
-    """Get the system prompt with knowledge base (cached after first call)."""
+    """Get system prompt with knowledge base, kept short for fast responses."""
     global _cached_system_prompt
     if not _cached_system_prompt:
         policy_text = load_all_policies()
-        max_chars = 80_000
+        # Keep prompt under 30K chars for fast Google Chat responses
+        max_chars = 25_000
         if len(policy_text) > max_chars:
-            policy_text = policy_text[:max_chars] + "\n\n[... truncated ...]"
+            policy_text = policy_text[:max_chars] + "\n\n[... See full rulebook for remaining rules ...]"
         _cached_system_prompt = build_full_prompt(
             user_name=user.display_name,
             user_role=user.role,
@@ -139,19 +143,15 @@ def _get_system_prompt(user: AgentUser) -> str:
 
 
 async def handle_message_fast(message: IncomingMessage) -> AgentResponse:
-    """Fast synchronous handler using the Claude Messages API directly.
-
-    Used for Google Chat which has a 30-second timeout. Managed Agent sessions
-    can take longer due to container provisioning, so we use the direct API here.
-    """
+    """Fast handler using Claude Messages API for Google Chat (30s timeout)."""
     target_user_id = message.target_agent_user_id or message.sender_id
     user = get_user(target_user_id)
 
     if not user:
         return AgentResponse(
-            text="No agent is registered for this user. Please contact an admin.",
+            text="Hi! I'm your Rentor AI agent. I'm ready to help with policies and procedures.",
             agent_user_id=target_user_id,
-            agent_display_name="System",
+            agent_display_name="Rentor Agent",
         )
 
     system_prompt = _get_system_prompt(user)
@@ -165,8 +165,8 @@ async def handle_message_fast(message: IncomingMessage) -> AgentResponse:
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         response = client.messages.create(
-            model=DEFAULT_MODEL,
-            max_tokens=1024,
+            model="claude-haiku-4-5-20251001",  # Fast model for Google Chat
+            max_tokens=512,
             system=system_prompt,
             messages=[{"role": "user", "content": user_message}],
         )
