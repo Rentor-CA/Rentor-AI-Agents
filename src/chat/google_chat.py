@@ -20,7 +20,9 @@ async def google_chat_webhook(request: Request):
     """
     event = await request.json()
     event_type = event.get("type", "")
-    print(f"[WEBHOOK] type={event_type} user={event.get('user', {}).get('displayName', '?')}")
+    # Log the full event keys and top-level structure for debugging
+    print(f"[WEBHOOK] keys={list(event.keys())} type={event_type}")
+    print(f"[WEBHOOK] raw={str(event)[:500]}")
 
     if event_type == "ADDED_TO_SPACE":
         space_type = event.get("space", {}).get("type", "")
