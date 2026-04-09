@@ -12,6 +12,21 @@ from src.agents.agent_manager import handle_message_fast, get_user, register_use
 router = APIRouter(prefix="/chat", tags=["google-chat"])
 
 
+def _format_response(text: str, is_addon: bool = False) -> dict:
+    """Format response for either legacy Chat app or Workspace Add-on format."""
+    if is_addon:
+        return {
+            "hostAppDataAction": {
+                "chatDataAction": {
+                    "createMessageAction": {
+                        "message": {"text": text}
+                    }
+                }
+            }
+        }
+    return {"text": text}
+
+
 def _normalize_event(raw: dict) -> dict:
     """Normalize Google Chat event from either legacy or Add-on format.
 
@@ -74,23 +89,26 @@ async def google_chat_webhook(request: Request):
     print(f"[WEBHOOK] normalized type={event_type}")
     print(f"[WEBHOOK] extracted_text='{_extract_text(raw)[:100]}'")
 
+    # Detect if this is Add-on format (needs different response structure)
+    is_addon = "commonEventObject" in raw
+
     if event_type == "ADDED_TO_SPACE":
         space_type = event.get("space", {}).get("type", "")
         if space_type == "DM":
-            return {"text": "Hi! I'm your personal Rentor AI agent. Ask me anything about policies, procedures, or your daily work."}
-        return {"text": "Hello! I'm a Rentor AI agent. Mention me to ask questions or get help."}
+            return _format_response("Hi! I'm your personal Rentor AI agent. Ask me anything about policies, procedures, or your daily work.", is_addon)
+        return _format_response("Hello! I'm a Rentor AI agent. Mention me to ask questions or get help.", is_addon)
 
     if event_type == "REMOVED_FROM_SPACE":
         return {}
 
     if event_type == "MESSAGE":
-        return await _handle_message_event(event, raw)
+        return await _handle_message_event(event, raw, is_addon)
 
     # Fallback: try to handle as a message if there's any text
     text = _extract_text(raw)
     if text:
         print(f"[WEBHOOK] fallback: treating as message with text='{text[:50]}'")
-        return await _handle_raw_message(raw, text)
+        return await _handle_raw_message(raw, text, is_addon)
 
     print(f"[WEBHOOK] unhandled event, returning empty")
     return {}
@@ -154,7 +172,7 @@ def _auto_register(sender: dict) -> None:
     ))
 
 
-async def _handle_message_event(event: dict, raw: dict) -> dict:
+async def _handle_message_event(event: dict, raw: dict, is_addon: bool = False) -> dict:
     """Process a message event (normalized legacy format)."""
     message_data = event.get("message", {})
     sender = event.get("user", {})
@@ -166,11 +184,10 @@ async def _handle_message_event(event: dict, raw: dict) -> dict:
     text = text.strip()
 
     if not text:
-        # Try extracting from raw as fallback
         text = _extract_text(raw)
 
     if not text:
-        return {"text": "I didn't catch that. Could you try again?"}
+        return _format_response("I didn't catch that. Could you try again?", is_addon)
 
     incoming = IncomingMessage(
         source=MessageSource.GOOGLE_CHAT,
@@ -184,17 +201,11 @@ async def _handle_message_event(event: dict, raw: dict) -> dict:
     incoming = route_message(incoming)
     response = await handle_message_fast(incoming)
 
-    result: dict = {"text": response.text}
-    print(f"[WEBHOOK] responding with {len(response.text)} chars")
-
-    thread_name = message_data.get("thread", {}).get("name")
-    if thread_name:
-        result["thread"] = {"name": thread_name}
-
-    return result
+    print(f"[WEBHOOK] responding with {len(response.text)} chars, addon={is_addon}")
+    return _format_response(response.text, is_addon)
 
 
-async def _handle_raw_message(raw: dict, text: str) -> dict:
+async def _handle_raw_message(raw: dict, text: str, is_addon: bool = False) -> dict:
     """Handle a message extracted directly from raw event data."""
     sender = _extract_user(raw)
     _auto_register(sender)
@@ -209,5 +220,5 @@ async def _handle_raw_message(raw: dict, text: str) -> dict:
     incoming = route_message(incoming)
     response = await handle_message_fast(incoming)
 
-    print(f"[WEBHOOK] fallback responding with {len(response.text)} chars")
-    return {"text": response.text}
+    print(f"[WEBHOOK] fallback responding with {len(response.text)} chars, addon={is_addon}")
+    return _format_response(response.text, is_addon)
