@@ -36,24 +36,24 @@ def _normalize_event(raw: dict) -> dict:
         return chat_data
 
     # Try to build a legacy-style event from available data
-    # In some Add-on formats, the message info is directly in chat
+    # Add-on format uses messagePayload inside chat
+    payload = chat_data.get("messagePayload", {})
     event = {}
 
     # Determine event type from available signals
-    if "message" in chat_data or "messageText" in common:
+    if payload or "message" in chat_data or "messageText" in common:
         event["type"] = "MESSAGE"
     elif "addedToSpace" in chat_data:
         event["type"] = "ADDED_TO_SPACE"
     elif "removedFromSpace" in chat_data:
         event["type"] = "REMOVED_FROM_SPACE"
     else:
-        # Default to MESSAGE if we have any chat data
         event["type"] = "MESSAGE"
 
-    # Extract message, user, space from wherever they are
-    event["message"] = chat_data.get("message", chat_data)
+    # Extract message from messagePayload.message or fallback paths
+    event["message"] = payload.get("message", chat_data.get("message", payload))
     event["user"] = chat_data.get("user", common.get("user", {}))
-    event["space"] = chat_data.get("space", {})
+    event["space"] = payload.get("space", chat_data.get("space", {}))
 
     return event
 
@@ -98,11 +98,14 @@ async def google_chat_webhook(request: Request):
 
 def _extract_text(raw: dict) -> str:
     """Try to extract message text from any event format."""
-    # Try common paths
+    # Try common paths — including Workspace Add-on messagePayload format
     for path in [
+        lambda: raw.get("chat", {}).get("messagePayload", {}).get("message", {}).get("argumentText", ""),
+        lambda: raw.get("chat", {}).get("messagePayload", {}).get("message", {}).get("text", ""),
+        lambda: raw.get("chat", {}).get("messagePayload", {}).get("argumentText", ""),
+        lambda: raw.get("chat", {}).get("messagePayload", {}).get("text", ""),
         lambda: raw.get("chat", {}).get("message", {}).get("text", ""),
         lambda: raw.get("chat", {}).get("message", {}).get("argumentText", ""),
-        lambda: raw.get("chat", {}).get("messageText", ""),
         lambda: raw.get("commonEventObject", {}).get("parameters", {}).get("text", ""),
         lambda: raw.get("message", {}).get("text", ""),
         lambda: raw.get("message", {}).get("argumentText", ""),
@@ -120,6 +123,7 @@ def _extract_user(raw: dict) -> dict:
     """Try to extract user info from any event format."""
     for path in [
         lambda: raw.get("chat", {}).get("user", {}),
+        lambda: raw.get("chat", {}).get("messagePayload", {}).get("sender", {}),
         lambda: raw.get("user", {}),
         lambda: raw.get("commonEventObject", {}).get("user", {}),
     ]:
