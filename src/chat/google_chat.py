@@ -1,9 +1,9 @@
 """Google Chat webhook handler for incoming events."""
 
 from fastapi import APIRouter, Request, HTTPException
-from src.models.schemas import IncomingMessage, MessageSource
+from src.models.schemas import IncomingMessage, MessageSource, AgentUser
 from src.agents.router import route_message
-from src.agents.agent_manager import handle_message
+from src.agents.agent_manager import handle_message, get_user, register_user
 
 router = APIRouter(prefix="/chat", tags=["google-chat"])
 
@@ -39,11 +39,32 @@ async def google_chat_webhook(request: Request):
     return {}
 
 
+def _auto_register(sender: dict) -> None:
+    """Auto-register a Google Chat user if not already registered."""
+    user_id = sender.get("name", "unknown")
+    if get_user(user_id):
+        return
+
+    display_name = sender.get("displayName", "Unknown")
+    email = sender.get("email", "")
+
+    register_user(AgentUser(
+        user_id=user_id,
+        display_name=display_name,
+        email=email,
+        role="Team Member",
+        department="Operations",
+    ))
+
+
 async def _handle_message_event(event: dict) -> dict:
     """Process an incoming message event from Google Chat."""
     message_data = event.get("message", {})
     sender = event.get("user", {})
     space = event.get("space", {})
+
+    # Auto-register the sender if they're new
+    _auto_register(sender)
 
     text = message_data.get("argumentText", "") or message_data.get("text", "")
     text = text.strip()
