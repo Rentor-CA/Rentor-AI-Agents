@@ -3,7 +3,11 @@
 Supports Memory Stores for knowledge base and Multi-Agent orchestration.
 """
 
+import anthropic
 from src.agents.managed_agent import create_session, send_message
+from src.config import ANTHROPIC_API_KEY, DEFAULT_MODEL
+from src.agents.system_prompts import build_full_prompt
+from src.knowledge.policy_loader import load_all_policies
 from src.models.schemas import AgentUser, IncomingMessage, AgentResponse
 
 # In-memory registry of user agents and their sessions
@@ -105,6 +109,70 @@ async def handle_message(message: IncomingMessage) -> AgentResponse:
             response_text = send_message(session_id, user_message)
         except Exception as retry_err:
             response_text = f"I'm having trouble connecting right now. Error: {retry_err}"
+
+    return AgentResponse(
+        text=response_text,
+        agent_user_id=user.user_id,
+        agent_display_name=f"{user.display_name}'s Agent",
+    )
+
+
+# Cache the system prompt so we don't rebuild it every call
+_cached_system_prompt: str = ""
+
+
+def _get_system_prompt(user: AgentUser) -> str:
+    """Get the system prompt with knowledge base (cached after first call)."""
+    global _cached_system_prompt
+    if not _cached_system_prompt:
+        policy_text = load_all_policies()
+        max_chars = 80_000
+        if len(policy_text) > max_chars:
+            policy_text = policy_text[:max_chars] + "\n\n[... truncated ...]"
+        _cached_system_prompt = build_full_prompt(
+            user_name=user.display_name,
+            user_role=user.role,
+            user_department=user.department,
+            policy_text=policy_text,
+        )
+    return _cached_system_prompt
+
+
+async def handle_message_fast(message: IncomingMessage) -> AgentResponse:
+    """Fast synchronous handler using the Claude Messages API directly.
+
+    Used for Google Chat which has a 30-second timeout. Managed Agent sessions
+    can take longer due to container provisioning, so we use the direct API here.
+    """
+    target_user_id = message.target_agent_user_id or message.sender_id
+    user = get_user(target_user_id)
+
+    if not user:
+        return AgentResponse(
+            text="No agent is registered for this user. Please contact an admin.",
+            agent_user_id=target_user_id,
+            agent_display_name="System",
+        )
+
+    system_prompt = _get_system_prompt(user)
+
+    user_message = message.text
+    if message.sender_id != target_user_id:
+        sender = get_user(message.sender_id)
+        sender_name = sender.display_name if sender else message.sender_name
+        user_message = f"[Message from team member {sender_name}]: {message.text}"
+
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        response = client.messages.create(
+            model=DEFAULT_MODEL,
+            max_tokens=1024,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        response_text = response.content[0].text if response.content else "I couldn't generate a response."
+    except Exception as e:
+        response_text = f"I'm having trouble right now. Error: {e}"
 
     return AgentResponse(
         text=response_text,

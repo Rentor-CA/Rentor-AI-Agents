@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Request, HTTPException
 from src.models.schemas import IncomingMessage, MessageSource, AgentUser
 from src.agents.router import route_message
-from src.agents.agent_manager import handle_message, get_user, register_user
+from src.agents.agent_manager import handle_message_fast, get_user, register_user
 
 router = APIRouter(prefix="/chat", tags=["google-chat"])
 
@@ -84,8 +84,8 @@ async def _handle_message_event(event: dict) -> dict:
     # Check for cross-agent routing
     incoming = route_message(incoming)
 
-    # Get response from the agent
-    response = await handle_message(incoming)
+    # Get response using fast sync handler (Google Chat has 30s timeout)
+    response = await handle_message_fast(incoming)
 
     result: dict = {"text": response.text}
 
